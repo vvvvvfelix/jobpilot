@@ -6,6 +6,7 @@ const { Store } = require('./src/engine/store');
 const { Logger } = require('./src/engine/logger');
 const auto = require('./src/engine/automation');
 const scraperLib = require('./src/engine/scraper');
+const sitesLib = require('./src/engine/sites');
 const { optimizeResume, optimizeWithLlm, cleanResumeText, toneDownClaims } = require('./src/engine/resume');
 const scoreLib = require('./src/engine/score');
 const { parseResume } = require('./src/engine/parse');
@@ -80,6 +81,15 @@ function createBrowserView() {
       logger.error('guard', '检测到风控页，已暂停自动动作', { url: url.slice(0, 120), coolMin: t.waitMin });
       return;
     }
+    const site = sitesLib.detect(url);
+    if (site.apply && /job|search|position|zhiwei|zp|geek|list/i.test(url) && !/detail|desc|resume/i.test(url)) {
+      onJobsPageLoaded(url).catch((err) => logger.warn('jobs', '岗位页自动抓取失败', { msg: err.message }));
+      return;
+    }
+    if (site.chat && /message|im|chat/i.test(url)) {
+      onMessagePageLoaded(url).catch((err) => logger.warn('msg', '打开即抓取失败', { msg: err.message }));
+      return;
+    }
     if (/zhaopin\.com\/jobs/i.test(url)) {
       onJobsPageLoaded(url).catch((err) => logger.warn('jobs', '岗位页自动抓取失败', { msg: err.message }));
       return;
@@ -108,7 +118,9 @@ async function onJobsPageLoaded(url) {
   lastJobsAutoAt = Date.now();
   try {
     for (let i = 0; i < 15; i += 1) {
-      const n = await view.webContents.executeJavaScript('document.querySelectorAll(".job-card").length', true).catch(() => 0);
+      const n = await view.webContents
+        .executeJavaScript('document.querySelectorAll(".job-card, .joblist-item, .job-card-wrapper, .job-list-item, .item__content, .job-item").length', true)
+        .catch(() => 0);
       if (n > 0) break;
       await new Promise((r) => setTimeout(r, 1000));
     }
@@ -462,13 +474,26 @@ ipcMain.handle('resume:optimize', wrap(async () => {
 }));
 
 ipcMain.handle('browser:goto', wrap(async ({ url }) => auto.loadUrl(view.webContents, url, logger)));
-ipcMain.handle('browser:home', wrap(async () => auto.loadUrl(view.webContents, store.get('settings').homeUrl, logger)));
-ipcMain.handle('browser:search', wrap(async ({ kw, city }) => {
-  const tpl = store.get('settings').searchUrlTemplate;
-  const url = tpl.replace('{kw}', encodeURIComponent(kw || '嵌入式开发')).replace('{jl}', city || '763');
+ipcMain.handle('browser:home', wrap(async () => {
+  const cur = sitesLib.detect(view.webContents.getURL());
+  const target = cur.home || store.get('settings').homeUrl;
+  return auto.loadUrl(view.webContents, target, logger);
+}));
+ipcMain.handle('browser:search', wrap(async ({ kw, city, site }) => {
+  const cur = sitesLib.detect(view.webContents.getURL());
+  const key = site || cur.key;
+  const built = sitesLib.searchUrl(key, kw || '销售', city || '广州');
+  const settings = store.get('settings');
+  const url = built || settings.searchUrlTemplate
+    .replace('{kw}', encodeURIComponent(kw || '嵌入式开发'))
+    .replace('{jl}', city || '763');
   return auto.loadUrl(view.webContents, url, logger);
 }));
-ipcMain.handle('browser:info', wrap(async () => auto.pageInfo(view.webContents)));
+ipcMain.handle('browser:info', wrap(async () => {
+  const info = await auto.pageInfo(view.webContents);
+  return { ...info, site: auto.currentSite(view.webContents) };
+}));
+ipcMain.handle('sites:list', wrap(async () => ({ sites: sitesLib.list(), current: auto.currentSite(view.webContents) })));
 
 ipcMain.handle('jobs:scrape', wrap(async () => {
   const jobs = await auto.scrapeJobs(view.webContents, logger);
