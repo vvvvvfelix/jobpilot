@@ -1,0 +1,33 @@
+{
+  "homeUrl": "https://www.zhaopin.com/",
+  "messageUrl": "https://i.zhaopin.com/im",
+  "resumeUrl": "https://i.zhaopin.com/resume",
+  "searchUrlTemplate": "https://www.zhaopin.com/jobs/?jl=763&kw={kw}",
+  "logDir": "D:\\ZhaopinAssistant\\logs",
+  "logRetentionDays": 30,
+  "autoReplyOnOpen": true,
+  "autoReplySend": false,
+  "autoApplyMax": 5,
+  "autoReplyMax": 5,
+  "autoThreshold": 55,
+  "dailyCap": 40,
+  "msgPerHour": 8,
+  "msgDailyCap": 30,
+  "applyPerHour": 6,
+  "msgIntervalMs": 6000,
+  "llm": {
+    "enabled": true,
+    "provider": "custom",
+    "baseUrl": "http://127.0.0.1:8080/v1",
+    "model": "your-model-name",
+    "apiKey": "YOUR_API_KEY",
+    "temperature": 0.4,
+    "timeoutMs": 60000
+  },
+  "learn": {
+    "enabled": true,
+    "checkMin": 10,
+    "idleMin": 15,
+    "gapMin": 30
+  }
+}

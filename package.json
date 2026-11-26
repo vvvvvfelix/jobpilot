@@ -1,0 +1,33 @@
+{
+  "name": "jobpilot",
+  "version": "1.0.0",
+  "private": false,
+  "description": "JobPilot · 求职自动化工作台：Electron 内嵌浏览器 + 大模型，简历优化、岗位匹配、自动投递、HR 心理分析与拟人回复",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "learn": "node scripts/learn.js",
+    "learn:daemon": "node scripts/learn-daemon.js"
+  },
+  "keywords": [
+    "electron",
+    "job-search",
+    "resume",
+    "automation",
+    "llm",
+    "zhaopin",
+    "recruiting"
+  ],
+  "author": "Felix",
+  "license": "MIT",
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "electron": "^45.5.0"
+  },
+  "dependencies": {
+    "mammoth": "^1.13.0",
+    "pdf-parse": "^2.4.5"
+  }
+}

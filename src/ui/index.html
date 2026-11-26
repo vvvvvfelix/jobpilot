@@ -1,0 +1,228 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <title>智联求职助手</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <aside class="panel">
+    <header class="head">
+      <div class="brand">智联求职助手<span class="ver">v1.0</span></div>
+      <div class="status"><span id="pageUrl" class="url">未连接</span></div>
+      <div class="head-actions">
+        <button id="btnHome" class="ghost">首页</button>
+        <button id="btnSearch" class="ghost">搜索岗位</button>
+        <button id="btnRefresh" class="ghost">刷新状态</button>
+      </div>
+    </header>
+
+    <nav class="tabs">
+      <button class="tab active" data-tab="resume">简历</button>
+      <button class="tab" data-tab="need">需求</button>
+      <button class="tab" data-tab="jobs">岗位</button>
+      <button class="tab" data-tab="version">版本</button>
+      <button class="tab" data-tab="msg">消息</button>
+      <button class="tab" data-tab="kb">知识库</button>
+      <button class="tab" data-tab="report">报表</button>
+      <button class="tab" data-tab="log">日志</button>
+      <button class="tab" data-tab="settings">设置</button>
+    </nav>
+
+    <main class="body">
+      <section class="pane active" id="pane-resume">
+        <div class="row">
+          <label>姓名<input id="rName" placeholder="你的名字" /></label>
+          <label>目标岗位<input id="rTitle" placeholder="抓取岗位后自动填匹配度最高的" /></label>
+        </div>
+        <div class="out" id="matchList"></div>
+        <div class="row">
+          <label>年限<input id="rYears" type="number" min="0" step="1" /></label>
+          <label>学历
+            <select id="rEdu">
+              <option>大专</option><option selected>本科</option><option>硕士</option><option>博士</option>
+            </select>
+          </label>
+          <label>城市<input id="rCity" placeholder="广州" /></label>
+        </div>
+        <label class="block">简历原文（直接粘贴）<textarea id="rRaw" rows="12" placeholder="教育背景、项目经历、技能……"></textarea></label>
+        <div class="row actions">
+          <button id="btnFetchResume" class="primary">从智联读在线简历</button>
+          <button id="btnImportResume" class="ghost">导入本地简历文件</button>
+        </div>
+        <div class="row actions">
+          <button id="btnOptimize" class="primary">优化简历（去 AI 腔）</button>
+          <button id="btnApplyOpt" class="primary">一键更新（用优化稿）</button>
+          <button id="btnSaveResume" class="ghost">保存</button>
+        </div>
+        <label class="block">优化结果<textarea id="rOpt" rows="12" readonly></textarea></label>
+        <div class="out" id="rNotes"></div>
+      </section>
+
+      <section class="pane" id="pane-need">
+        <div class="out" id="needPersona" style="margin-bottom:8px"></div>
+        <label class="block">我想要的岗位（只填这一栏，写方向、客户、行业、硬性要求）<textarea id="nText" rows="6"
+          placeholder="例：广州 渠道销售 3-5年 企业客户 面销 电话销售 水性油墨 8000 以上。写你真正想找的方向，不用重复姓名/学历/城市，这些系统会从简历自动带。"></textarea></label>
+        <div class="row actions">
+          <button id="btnFillNeed" class="ghost">用匹配到的岗位帮我填</button>
+        </div>
+        <div class="row">
+          <label>城市<input id="nCity" /></label>
+          <label>最低月薪(元)<input id="nSalary" type="number" min="0" step="500" /></label>
+        </div>
+        <div class="row actions">
+          <button id="btnSaveNeed" class="primary">保存需求</button>
+          <button id="btnSearchNeed" class="ghost">按需求打开搜索页</button>
+        </div>
+        <p class="hint">匹配算法：岗位标题关键词 + 技能标签重合 + 学历/年限/薪资/城市，输出 0-100 分并给出理由。</p>
+      </section>
+
+      <section class="pane" id="pane-jobs">
+        <div class="row actions">
+          <button id="btnScrape" class="primary">抓取当前页岗位并打分</button>
+          <button id="btnAuto" class="primary">一键自动投递</button>
+          <button id="btnDryRun" class="ghost">预演投递</button>
+          <button id="btnApply" class="warn">真实投递</button>
+        </div>
+        <div class="joblist" id="jobList"><p class="hint">先在右边浏览器打开智联的搜索结果页，再点「抓取」。</p></div>
+        <div class="out" id="jobNotes"></div>
+      </section>
+
+      <section class="pane" id="pane-version">
+        <div class="row actions">
+          <button id="btnVerGen" class="primary">生成 / 刷新版本库</button>
+          <button id="btnAts" class="ghost">ATS 自测</button>
+        </div>
+        <div class="joblist" id="verList"><p class="hint">先抓一页岗位，再点生成 —— 版本按这批岗位的共性词切。</p></div>
+        <div class="out" id="verOut"></div>
+        <div class="out" id="atsOut"></div>
+      </section>
+
+      <section class="pane" id="pane-msg">
+        <div class="row actions">
+          <button id="btnMsgOpen" class="ghost">打开消息页</button>
+          <button id="btnAutoReply" class="primary">批量自动回复（按简历人设）</button>
+        </div>
+        <div class="joblist" id="msgList"></div>
+        <div id="memBox"></div>
+        <div class="hint">消息页一打开就会自动抓会话、自动生成回复（最多等 20 秒渲染），设了「直接发送」就自动发。</div>
+        <div class="out" id="msgNotes"></div>
+        <div class="joblist" id="draftList"></div>
+      </section>
+
+      <section class="pane" id="pane-kb">
+        <div class="row actions">
+          <button id="btnKbLearn" class="primary">现在学一条</button>
+          <button id="btnKbReload" class="ghost">刷新</button>
+          <button id="btnKbOpen" class="ghost">打开知识库文件</button>
+        </div>
+        <div class="row">
+          <label class="check"><input type="checkbox" id="kbEnabled" /> 空闲自动学习</label>
+          <label>检查间隔(分钟)<input id="kbCheckMin" type="number" min="1" max="120" /></label>
+          <label>冷却(分钟)<input id="kbGapMin" type="number" min="1" max="1440" /></label>
+          <button id="btnKbSave" class="ghost">保存节奏</button>
+        </div>
+        <div class="out" id="kbSummary"></div>
+        <div class="joblist" id="kbList"></div>
+        <div class="hint">空闲时按真问题去搜公开文章，压成三点认知存进 data/knowledge.json；回复时只当判断背景，不会背给 HR 听。</div>
+      </section>
+
+      <section class="pane" id="pane-report">
+        <div class="row actions">
+          <button id="btnStats" class="primary">读取统计</button>
+          <button id="btnFunnel" class="ghost">版本漏斗与告警</button>
+          <button id="btnSim" class="ghost">跑一遍全场景演练</button>
+        </div>
+        <div class="out" id="statsOut"></div>
+        <div class="out" id="funnelOut"></div>
+        <div class="out" id="alertsOut"></div>
+        <div class="out" id="simOut"></div>
+      </section>
+
+      <section class="pane" id="pane-log">
+        <div class="row actions">
+          <button id="btnLogReload" class="primary">读取日志</button>
+          <button id="btnLogOpen" class="ghost">打开日志目录</button>
+        </div>
+        <pre id="logView" class="log"></pre>
+      </section>
+
+      <section class="pane" id="pane-settings">
+        <label class="block">日志目录（默认 D:\ZhaopinAssistant\logs）<input id="sLogDir" /></label>
+        <div class="row">
+          <label>每轮最多投递<input id="sMaxApply" type="number" min="1" max="50" /></label>
+          <label>投递间隔(毫秒)<input id="sInterval" type="number" min="3000" step="1000" /></label>
+        </div>
+        <div class="row">
+          <label>每日投递上限<input id="sDailyCap" type="number" min="1" max="100" /></label>
+        </div>
+        <label class="check"><input type="checkbox" id="sExcludeHead" /> 自动排除猎头 / 中介 / 外包岗</label>
+        <label class="block">黑名单公司（一行一个）<textarea id="sBlacklist" rows="3"></textarea></label>
+        <label class="check"><input type="checkbox" id="sConfirmApply" /> 真实投递前要求二次确认</label>
+        <label class="check"><input type="checkbox" id="sConfirmSend" /> 发送前要求二次确认</label>
+        <div class="row">
+          <label>消息页地址<input id="sMsgUrl" /></label>
+          <label>简历页地址<input id="sResumeUrl" /></label>
+        </div>
+        <label class="block">搜索页模板<input id="sSearchTpl" /></label>
+        <hr />
+        <div class="row">
+          <label>权重·技能<input id="wSkill" type="number" step="0.05" min="0" max="1" /></label>
+          <label>·经验<input id="wExp" type="number" step="0.05" min="0" max="1" /></label>
+          <label>·关键词<input id="wKw" type="number" step="0.05" min="0" max="1" /></label>
+        </div>
+        <div class="row">
+          <label>·项目<input id="wProj" type="number" step="0.05" min="0" max="1" /></label>
+          <label>·学历<input id="wEdu" type="number" step="0.05" min="0" max="1" /></label>
+          <label>·薪资<input id="wSal" type="number" step="0.05" min="0" max="1" /></label>
+        </div>
+        <label class="check"><input type="checkbox" id="sHardGate" /> 硬门槛：岗位硬性技能没全覆盖就不投（更保守）</label>
+        <div class="row">
+          <label>自动投递分数线<input id="sAutoScore" type="number" min="0" max="100" step="5" /></label>
+          <label>自动每轮投几个<input id="sAutoMax" type="number" min="1" max="20" /></label>
+        </div>
+        <div class="row">
+          <label>自动回复几个会话<input id="sReplyMax" type="number" min="1" max="20" /></label>
+        </div>
+        <label class="check"><input type="checkbox" id="sReplySend" /> 自动回复直接发送（不勾只生成草稿）</label>
+        <label class="check"><input type="checkbox" id="sAutoOpen" /> 打开消息页就自动抓会话并生成回复</label>
+        <div class="row">
+          <label>日志保留天数<input id="sLogDays" type="number" min="3" max="365" /></label>
+          <button id="btnEvolve" class="ghost">立即进化策略</button>
+        </div>
+        <hr />
+        <label class="check"><input type="checkbox" id="sLlmOn" /> 启用 AI（改简历 + 写回复都走模型）</label>
+        <div class="row">
+          <label>模型来源
+            <select id="sLlmProvider">
+              <option value="freellmapi">局域网 FreeLLMAPI（127.0.0.1:18902）</option>
+              <option value="ofm">局域网 OFM 免费（127.0.0.1:18901）</option>
+              <option value="g4f">局域网 g4f 免费（127.0.0.1:1337）</option>
+              <option value="pollinations">Pollinations 免费（无需 key）</option>
+              <option value="local">局域网 Ollama（127.0.0.1）</option>
+              <option value="custom">自定义 OpenAI 兼容</option>
+            </select>
+          </label>
+        </div>
+        <div class="row">
+          <label>BaseURL<input id="sLlmBase" /></label>
+          <label>模型<input id="sLlmModel" /></label>
+        </div>
+        <label class="block">API Key（免费接口留空）<input id="sLlmKey" type="password" /></label>
+        <div class="row actions">
+          <button id="btnLlmTest" class="ghost">测试模型连接</button>
+          <span class="hint" id="llmState"></span>
+        </div>
+        <div class="row actions">
+          <button id="btnSaveSettings" class="primary">保存设置</button>
+        </div>
+        <p class="hint">提醒：批量自动投递可能违反招聘平台的使用协议，账号风险自行承担；建议先预演，间隔别低于 10 秒。</p>
+      </section>
+    </main>
+
+    <footer class="foot"><span id="toast"></span></footer>
+  </aside>
+  <div class="gutter" title="拖动分隔线"></div>
+  <script src="app.js"></script>
+</body>
+</html>
