@@ -78,6 +78,12 @@
       </section>
 
       <section class="pane" id="pane-jobs">
+        <div class="row">
+          <label>站点<select id="siteSel"></select></label>
+          <label>关键词<input id="siteKw" placeholder="销售" /></label>
+          <button id="btnOpenSite" class="ghost">打开该站搜索页</button>
+          <span class="hint" id="siteNow"></span>
+        </div>
         <div class="row actions">
           <button id="btnScrape" class="primary">抓取当前页岗位并打分</button>
           <button id="btnAuto" class="primary">一键自动投递</button>
@@ -148,7 +154,7 @@
       </section>
 
       <section class="pane" id="pane-settings">
-        <label class="block">日志目录（默认 D:\ZhaopinAssistant\logs）<input id="sLogDir" /></label>
+        <label class="block">日志目录（默认 F:\ZhaopinAssistant\logs）<input id="sLogDir" /></label>
         <div class="row">
           <label>每轮最多投递<input id="sMaxApply" type="number" min="1" max="50" /></label>
           <label>投递间隔(毫秒)<input id="sInterval" type="number" min="3000" step="1000" /></label>
@@ -195,11 +201,11 @@
         <div class="row">
           <label>模型来源
             <select id="sLlmProvider">
-              <option value="freellmapi">局域网 FreeLLMAPI（127.0.0.1:18902）</option>
-              <option value="ofm">局域网 OFM 免费（127.0.0.1:18901）</option>
-              <option value="g4f">局域网 g4f 免费（127.0.0.1:1337）</option>
+              <option value="freellmapi">局域网 FreeLLMAPI（192.168.1.34:18902）</option>
+              <option value="ofm">局域网 OFM 免费（192.168.1.34:18901）</option>
+              <option value="g4f">局域网 g4f 免费（192.168.1.34:1337）</option>
               <option value="pollinations">Pollinations 免费（无需 key）</option>
-              <option value="local">局域网 Ollama（127.0.0.1）</option>
+              <option value="local">局域网 Ollama（192.168.1.34）</option>
               <option value="custom">自定义 OpenAI 兼容</option>
             </select>
           </label>
