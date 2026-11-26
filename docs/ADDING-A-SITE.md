@@ -90,3 +90,12 @@ if (!report.ok) logger.warn('site', '选择器失效', report.missing);
 - **iframe**：部分站点消息页在 iframe 里，`executeJavaScript` 要进 frame。
 - **同名按钮**：`button` 文案相同但语义不同，尽量用容器限定 + 文案双重匹配。
 - **风控**：新站点第一天就高频操作最容易触发，先用 dry-run 跑两天。
+
+## 现状（2026-11-27）
+
+上面的 `SiteAdapter` 设想已经落地成两个文件：
+
+- `src/engine/sites.js`：一个纯配置的注册表，键是 `zhaopin / job51 / liepin / boss / lagou / generic`。要加新站，先在这里加一条：`hosts` 决定 URL 归属，`searchTpl` 用 `{kw}`、`{city}` 占位，`card/title/salary/company/location/tags` 给选择器数组，`imItem` 给会话列表类名，`apply/chat` 声明该站能不能投递、有没有站内 IM。
+- `src/engine/scraperMulti.js`：把配置塞进页面脚本。选择器全部落空时用启发式：卡片按「宽度 > 200、高度 44–460、文本含薪资格式」筛，标题取含岗位关键词的行，公司名按「公司/集团/科技/有限…」后缀找，地点按城市表或标题里的 `[区]` 后缀找。
+
+加一个站的顺序：注册表里加配置 → 用 `node_modules/electron` 开个最小探针页跑 `JOBS(site)` 看前几条字段 → 调 `card/title/company` 三个选择器 → 再补 `imItem` 做消息。51job 实页 20 条字段全对，猎聘 40 条只有个别促销卡混入，拉勾公司名缺失（列表不展示）。
