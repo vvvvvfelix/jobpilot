@@ -147,6 +147,10 @@ function renderMatches(matches) {
 async function refreshPage() {
   const info = await call('browser:info', null, '读取页面');
   if (info?.url) $('#pageUrl').textContent = `${info.title || ''} — ${info.url}`;
+  if (info?.site) {
+    showSiteNow(info.site);
+    if ($('#siteSel') && [...$('#siteSel').options].some((o) => o.value === info.site.key)) $('#siteSel').value = info.site.key;
+  }
 }
 
 function renderJobs(ranked, plan) {
@@ -302,6 +306,32 @@ $('#btnApplyOpt').addEventListener('click', async () => {
 $('#btnSearchNeed').addEventListener('click', async () => {
   await persistNeed();
   await call('browser:search', { kw: $('#nText').value.slice(0, 24), city: '763' }, '搜索');
+  await refreshPage();
+});
+
+// 站点选择：切站后按该站模板拼搜索页，抓取/投递/回复都会自动跟着当前 URL 换适配
+async function loadSites() {
+  const res = await call('sites:list', null, '读取站点');
+  if (!res) return;
+  const sel = $('#siteSel');
+  sel.innerHTML = res.sites
+    .filter((s) => s.home || s.key === 'generic')
+    .map((s) => `<option value="${s.key}">${s.name}${s.chat ? '' : '（只能投递）'}${s.risk ? ` · 风险${s.risk}` : ''}</option>`)
+    .join('');
+  sel.value = res.current?.key || 'zhaopin';
+  showSiteNow(res.current);
+}
+
+function showSiteNow(site) {
+  if (!site) return;
+  $('#siteNow').textContent = `当前：${site.name}${site.apply ? '' : '（不支持投递）'}${site.chat ? '' : ' / 无站内沟通'}`;
+}
+
+$('#btnOpenSite').addEventListener('click', async () => {
+  const site = $('#siteSel').value;
+  const kw = ($('#siteKw').value || state?.requirement?.text || '销售').slice(0, 24);
+  const city = $('#nCity').value || state?.requirement?.prefs?.city || '广州';
+  await call('browser:search', { kw, city, site }, '打开站点');
   await refreshPage();
 });
 
@@ -542,11 +572,11 @@ $('#btnSim').addEventListener('click', async () => {
 });
 
 const LLM_PRESETS = {
-  freellmapi: { baseUrl: 'http://127.0.0.1:18902/v1', model: 'auto' },
-  ofm: { baseUrl: 'http://127.0.0.1:18901/v1', model: 'combo:auto-failover' },
-  g4f: { baseUrl: 'http://127.0.0.1:1337/v1', model: 'glm-5.3-flash' },
+  freellmapi: { baseUrl: 'http://192.168.1.34:18902/v1', model: 'auto' },
+  ofm: { baseUrl: 'http://192.168.1.34:18901/v1', model: 'combo:auto-failover' },
+  g4f: { baseUrl: 'http://192.168.1.34:1337/v1', model: 'glm-5.3-flash' },
   pollinations: { baseUrl: 'https://text.pollinations.ai/openai', model: 'openai' },
-  local: { baseUrl: 'http://127.0.0.1:11434/v1', model: 'qwen2.5:3b' },
+  local: { baseUrl: 'http://192.168.1.34:11434/v1', model: 'qwen2.5:3b' },
   custom: { baseUrl: '', model: '' },
 };
 
@@ -711,6 +741,7 @@ $('#btnFunnel').addEventListener('click', async () => {
   if (mem) renderMemory(mem);
   const lib = await call('versions:list', null, '读取版本库');
   if (lib) renderVersions(lib);
+  await loadSites();
   await refreshPage();
 })();
 
