@@ -134,6 +134,16 @@ async function scrapeMessages(wc, logger) {
 
 async function openConversation(wc, index, logger) {
   const site = siteOf(wc);
+  // 接管 Chrome 时优先用真实鼠标点击：BOSS 聊天列表对 JS click 不响应
+  if (!useLegacy(wc) && typeof wc.clickPoint === 'function') {
+    const pt = await run(wc, multi.ITEM_POINT(site, index)).catch(() => null);
+    if (pt && pt.ok) {
+      await wc.clickPoint(pt.x, pt.y);
+      logger?.info('message', `${site.name}：真实鼠标打开会话 #${index}`, { preview: pt.preview });
+      await sleep(1600);
+      return { ok: true, preview: pt.preview, realClick: true };
+    }
+  }
   const script = useLegacy(wc) ? scraper.OPEN_CONVERSATION(index) : multi.OPEN_CONV(site, index);
   const result = await run(wc, script);
   logger?.info('message', `${site.name}：打开会话 #${index}`, result);
