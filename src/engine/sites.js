@@ -60,10 +60,11 @@ const SITES = {
     hosts: ['liepin.com'],
     home: 'https://www.liepin.com/',
     resumeUrl: 'https://h.liepin.com/resume/showresumedetail/',
-    messageUrl: 'https://im.liepin.com/',
+    // 猎聘没有网页 IM：点「我的沟通」只给微信二维码，所以只做搜索+投递
+    messageUrl: 'https://c.liepin.com/',
     searchTpl: 'https://www.liepin.com/zhaopin/?key={kw}&city=050020&dqs=050020',
     apply: true,
-    chat: true,
+    chat: false,
     risk: '中',
     card: ['.job-list-item', '.job-card', '.job-list-box .job-card-pc'],
     title: ['.search-job-card-name', '.job-title-box .job-title', '.job-title', '.job-name'],
