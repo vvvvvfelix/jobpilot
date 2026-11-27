@@ -192,17 +192,34 @@ const MESSAGES = (site) => withCfg(site, `(() => {
         return r.width > 150 && r.height > 40 && r.height < 160;
       });
   }
+  const clsPick = (root, words, max = 40) => {
+    for (const e of root.querySelectorAll('[class]')) {
+      const c = String(e.className || '').toLowerCase();
+      if (!c || !words.some((w) => c.includes(w))) continue;
+      const s = txt(e);
+      if (s && s.length <= max) return s;
+    }
+    return '';
+  };
   const list = items.slice(0, 40).map((el, index) => {
     const lines = (el.innerText || '').split('\\n').map((l) => l.trim()).filter(Boolean);
     const unread = Boolean($('[class*="unread"], [class*="badge"], [class*="red-dot"], [class*="num"]', el));
+    const name = clsPick(el, ['name-box', 'nickname', 'user-name'], 30)
+      || lines.find((l) => /(先生|女士|HR|招聘|经理|主管|总监|顾问|BD|专员|助理)/i.test(l))
+      || lines[0]
+      || '';
+    const time = clsPick(el, ['time', 'date'], 20) || lines.find((l) => /(今天|昨天|\\d{1,2}:\\d{2}|月.*日)/.test(l)) || '';
+    const preview = clsPick(el, ['preview', 'last-msg', 'msg-text'], 120)
+      || lines.filter((l) => l !== name && l !== time && !/(今天|昨天|\\d{1,2}:\\d{2}|月.*日)/.test(l)).pop()
+      || '';
     return {
       index,
-      name: lines[0] || '',
-      company: lines.find((l) => /公司|集团|科技|有限|人事|HR/i.test(l)) || '',
-      title: lines.find((l) => /(经理|主管|销售|工程|顾问|专员|总监|助理)/.test(l)) || '',
-      time: lines.find((l) => /(今天|昨天|\\d{1,2}:\\d{2}|月|日)/.test(l)) || '',
+      name,
+      company: clsPick(el, ['company', 'brand', 'comp'], 30) || '',
+      title: '',
+      time,
       text: txt(el).slice(0, 200),
-      preview: lines[lines.length - 1] || '',
+      preview,
       unread,
     };
   }).filter((i) => i.name || i.text);
@@ -228,16 +245,40 @@ const OPEN_CONV = (site, index) => withCfg(site, `(() => {
   return JSON.stringify({ ok: true, preview: txt(item).slice(0, 120) });
 })()`);
 
+// 会话条目的屏幕坐标：CDP 下用真实鼠标点击，比 JS click 可靠（BOSS 对合成 click 不响应）
+const ITEM_POINT = (site, index) => withCfg(site, `(() => {
+  ${HELPERS}
+  let items = [];
+  for (const s of cfg.imItem) {
+    const found = $$(s).filter(visible);
+    if (found.length > items.length) items = found;
+  }
+  const item = items[${index}];
+  if (!item) return JSON.stringify({ ok: false, reason: 'conversation not found', count: items.length });
+  const r = item.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) return JSON.stringify({ ok: false, reason: 'item invisible' });
+  return JSON.stringify({
+    ok: true,
+    x: Math.round(r.left + Math.min(r.width / 2, 60)),
+    y: Math.round(r.top + Math.min(r.height / 2, 24)),
+    preview: txt(item).slice(0, 120),
+  });
+})()`);
+
 const READ_THREAD = (site) => withCfg(site, `(() => {
   ${HELPERS}
-  const bubbles = $$('[class*="bubble"], [class*="message-item"], [class*="msg-item"], [class*="chat-msg"], [class*="message-content"]')
+  let bubbles = $$('[class*="message-item"], [class*="msg-item"], [class*="chat-msg"], [class*="bubble"]')
     .filter(visible)
     .filter((el) => txt(el).length > 0);
-  const cr = ($$('[class*="chat"], [class*="message-panel"], main').find(visible) || document.body).getBoundingClientRect();
+  if (!bubbles.length) {
+    bubbles = $$('[class*="message-content"], [class*="msg-content"]').filter(visible).filter((el) => txt(el).length > 0);
+  }
+  const cr = ($$('[class*="chat-content"], [class*="chat-panel"], [class*="message-panel"], main').find(visible) || document.body).getBoundingClientRect();
   const messages = bubbles.slice(-30).map((el) => {
     const r = el.getBoundingClientRect();
     const cls = String(el.className || '');
-    const isMine = /mine|self|right|--me|own|send/.test(cls) || (r.left + r.width / 2) > cr.left + cr.width * 0.68;
+    const isMine = /item-myself|item-me|myself|mine|self|right|--me|own/.test(cls)
+      || (!/item-friend|friend/.test(cls) && r.width > 0 && (r.left + r.width / 2) > cr.left + cr.width * 0.7);
     return { text: txt(el).slice(0, 500), isMine };
   }).filter((m) => m.text);
   return JSON.stringify({
@@ -296,4 +337,28 @@ const HAS_AGREE = `(() => {
   return JSON.stringify({ count: btns.length });
 })()`;
 
-module.exports = { JOBS, DETAIL, CLICK_CARD, APPLY, CONFIRM, MESSAGES, OPEN_CONV, READ_THREAD, SEND, AGREE_RESUME, HAS_AGREE };
+// 自检用：把页面上像卡片/会话的元素类名吐出来，方便按真实 DOM 校准选择器
+const DOM_DUMP = (site) => withCfg(site, `(() => {
+  ${HELPERS}
+  const SAL = ${SALARY_RE};
+  const t = (e) => (e ? (e.innerText || '').trim().replace(/\\s+/g, ' ') : '');
+  const cand = $$('div,li,section,article').filter((el) => {
+    if (!visible(el)) return false;
+    const r = el.getBoundingClientRect();
+    if (r.width < 200 || r.height < 44 || r.height > 460) return false;
+    const s = txt(el);
+    return s.length >= 8 && s.length <= 900 && (SAL.test(s) || /公司|集团|有限|经理|主管|销售/.test(s));
+  }).slice(0, 6);
+  const chat = $$('[class*="chat"], [class*="session"], [class*="conversation"], [class*="message"], [class*="user-list"], [class*="item"]')
+    .filter(visible)
+    .filter((el) => { const r = el.getBoundingClientRect(); return r.width > 150 && r.height > 40 && r.height < 160; })
+    .slice(0, 6);
+  const brief = (list) => list.map((el) => ({
+    cls: String(el.className || '').slice(0, 90),
+    text: t(el).slice(0, 60),
+    kids: [...el.querySelectorAll('[class]')].slice(0, 8).map((k) => String(k.className || '').slice(0, 50) + '=' + t(k).slice(0, 18)),
+  }));
+  return JSON.stringify({ url: location.href, site: cfg.key, jobLike: brief(cand), chatLike: brief(chat) });
+})()`);
+
+module.exports = { JOBS, DETAIL, CLICK_CARD, APPLY, CONFIRM, MESSAGES, OPEN_CONV, ITEM_POINT, READ_THREAD, SEND, AGREE_RESUME, HAS_AGREE, DOM_DUMP };
