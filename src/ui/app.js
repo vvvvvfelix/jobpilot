@@ -77,6 +77,8 @@ function fillForms(data) {
   $('#nSalary').value = requirement.salaryMin || 0;
 
   $('#sLogDir').value = settings.logDir || '';
+  $('#sChromePort').value = (settings.chrome && settings.chrome.port) || 9222;
+  $('#sChromeHost').value = (settings.chrome && settings.chrome.host) || 'zhipin.com';
   $('#sMaxApply').value = settings.maxApplyPerRun || 10;
   $('#sInterval').value = settings.applyIntervalMs || 12000;
   $('#sDailyCap').value = settings.dailyCap || 40;
@@ -355,6 +357,20 @@ $('#btnScrape').addEventListener('click', async () => {
   }
 });
 
+$('#btnSiteCheck').addEventListener('click', async () => {
+  busy(['btnSiteCheck'], true);
+  const res = await call('site:selftest', null, '站点自检');
+  busy(['btnSiteCheck'], false);
+  if (!res) return;
+  const lines = [`站点：${res.site?.name || '?'}  抓到 ${res.count} 个`];
+  (res.samples || []).forEach((j, i) => lines.push(`${i + 1}. ${j.salary || '无薪资'}｜${j.title}｜${j.company || '无公司'}｜${j.location || '无地区'}`));
+  const dom = res.dom || {};
+  if (dom.jobLike?.length) lines.push('页面上像岗位卡的元素：' + dom.jobLike.slice(0, 3).map((d) => d.cls).join(' / '));
+  if (dom.chatLike?.length) lines.push('像会话的元素：' + dom.chatLike.slice(0, 3).map((d) => d.cls).join(' / '));
+  $('#jobNotes').textContent = lines.join('\n');
+  toast(`自检完成：${res.site?.name} 抓到 ${res.count} 个`);
+});
+
 $('#btnDryRun').addEventListener('click', () => runApply(true));
 
 $('#btnAuto').addEventListener('click', async () => {
@@ -465,9 +481,26 @@ $('#btnFillNeed').addEventListener('click', async () => {
 });
 $('#btnApply').addEventListener('click', () => runApply(false));
 
+$('#btnChromeConnect').addEventListener('click', async () => {
+  const port = Number($('#sChromePort').value || 9222);
+  const host = ($('#sChromeHost').value || 'zhipin.com').trim();
+  busy(['btnChromeConnect'], true);
+  const res = await call('chrome:connect', { port, host }, '连接 Chrome');
+  busy(['btnChromeConnect'], false);
+  if (res?.ok) {
+    $('#chromeState').textContent = `已接管：${res.site?.name || ''} ${res.url}`;
+    toast('已接管本机 Chrome');
+  }
+  await refreshPage();
+});
+
+$('#btnChromeClose').addEventListener('click', async () => {
+  await call('chrome:disconnect', null, '断开 Chrome');
+  $('#chromeState').textContent = '未接管（用内嵌浏览器）';
+});
+
 $('#btnMsgOpen').addEventListener('click', async () => {
-  const url = state?.settings?.messageUrl || 'https://www.zhaopin.com/message/';
-  await call('browser:goto', { url }, '打开消息页');
+  await call('message:page', null, '打开消息页');
   await refreshPage();
 });
 
@@ -604,6 +637,7 @@ $('#btnLlmTest').addEventListener('click', async () => {
 $('#btnSaveSettings').addEventListener('click', async () => {
   const patch = {
     logDir: $('#sLogDir').value.trim(),
+    chrome: { port: Number($('#sChromePort').value || 9222), host: ($('#sChromeHost').value || 'zhipin.com').trim() },
     maxApplyPerRun: Number($('#sMaxApply').value || 10),
     applyIntervalMs: Number($('#sInterval').value || 12000),
     dailyCap: Number($('#sDailyCap').value || 40),
