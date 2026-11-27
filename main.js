@@ -6,6 +6,7 @@ const { Store } = require('./src/engine/store');
 const { Logger } = require('./src/engine/logger');
 const auto = require('./src/engine/automation');
 const scraperLib = require('./src/engine/scraper');
+const scraperMultiLib = require('./src/engine/scraperMulti');
 const sitesLib = require('./src/engine/sites');
 const { optimizeResume, optimizeWithLlm, cleanResumeText, toneDownClaims } = require('./src/engine/resume');
 const scoreLib = require('./src/engine/score');
@@ -19,6 +20,13 @@ const { generateReplies } = require('./src/engine/replier');
 const policy = require('./src/engine/policy');
 const tracker = require('./src/engine/tracker');
 const scenarios = require('./src/engine/scenarios');
+const cdpLib = require('./src/engine/cdp');
+
+// 页面句柄：默认用内嵌浏览器；接管本机 Chrome 时换成 CDP 适配器（复用用户已登录的会话）
+let chromePage = null;
+function W() {
+  return chromePage || view.webContents;
+}
 const simulate = require('./src/engine/simulate');
 const memoryLib = require('./src/engine/memory');
 const llmLib = require('./src/engine/llm');
@@ -76,20 +84,36 @@ function createBrowserView() {
   // 单个 did-finish-load 监听器：风控页优先短路，避免风控命中时仍触发自动抓取
   view.webContents.on('did-finish-load', () => {
     const url = view.webContents.getURL();
-    if (/captcha|verify|security|punish|slide/i.test(url)) {
+    // BOSS 首次访问 / 换城市时的 security_check 属于常规安全校验，通过后页面自己会恢复，不当成风控
+    if (/_security_check=|passport\/zp\/security/i.test(url)) {
+      logger.info('guard', '安全校验页（常规校验，不计风控）', { url: url.slice(0, 120) });
+      return;
+    }
+    if (/captcha|verify|punish|slide/i.test(url)) {
       const t = guardLib.trip(store, { reason: `跳转到风控页：${url.replace(/^https?:\/\/[^/]+/, '').slice(0, 60)}` });
       logger.error('guard', '检测到风控页，已暂停自动动作', { url: url.slice(0, 120), coolMin: t.waitMin });
       return;
     }
     const site = sitesLib.detect(url);
-    if (site.apply && /job|search|position|zhiwei|zp|geek|list/i.test(url) && !/detail|desc|resume/i.test(url)) {
-      onJobsPageLoaded(url).catch((err) => logger.warn('jobs', '岗位页自动抓取失败', { msg: err.message }));
-      return;
-    }
-    if (site.chat && /message|im|chat/i.test(url)) {
+    const isChat = /\/chat|message|xiaoxi|\bim\b|session/i.test(url);
+    if (site.chat && isChat) {
       onMessagePageLoaded(url).catch((err) => logger.warn('msg', '打开即抓取失败', { msg: err.message }));
       return;
     }
+    if (
+      site.apply
+      && /job|geek|search|position|zhiwei|list/i.test(url)
+      && !/detail|desc|resume|user|passport/i.test(url)
+    ) {
+      onJobsPageLoaded(url).catch((err) => logger.warn('jobs', '岗位页自动抓取失败', { msg: err.message }));
+      return;
+    }
+    if (/zhaopin\.com\/jobs/i.test(url)) {
+      onJobsPageLoaded(url).catch((err) => logger.warn('jobs', '岗位页自动抓取失败', { msg: err.message }));
+      return;
+    }
+    if (!/zhaopin\.com\/(message|im)/i.test(url)) return;
+    onMessagePageLoaded(url).catch((err) => logger.warn('msg', '打开即抓取失败', { msg: err.message }));
     if (/zhaopin\.com\/jobs/i.test(url)) {
       onJobsPageLoaded(url).catch((err) => logger.warn('jobs', '岗位页自动抓取失败', { msg: err.message }));
       return;
@@ -118,14 +142,25 @@ async function onJobsPageLoaded(url) {
   lastJobsAutoAt = Date.now();
   try {
     for (let i = 0; i < 15; i += 1) {
-      const n = await view.webContents
+      const n = await W()
         .executeJavaScript('document.querySelectorAll(".job-card, .joblist-item, .job-card-wrapper, .job-list-item, .item__content, .job-item").length', true)
         .catch(() => 0);
       if (n > 0) break;
       await new Promise((r) => setTimeout(r, 1000));
     }
-    const jobs = await auto.scrapeJobs(view.webContents, logger);
+    const jobs = await auto.scrapeJobs(W(), logger);
     lastJobs = jobs.jobs || [];
+    if (!lastJobs.length) {
+      const site = sitesLib.detect(url);
+      const raw = await W().executeJavaScript(scraperMultiLib.DOM_DUMP(site), true).catch(() => null);
+      let dom = raw;
+      try { dom = JSON.parse(raw); } catch {}
+      logger.warn('scrape', `${site.name} 抓到 0 个，页面结构如下`, {
+        jobLike: (dom?.jobLike || []).map((d) => d.cls).slice(0, 5),
+        chatLike: (dom?.chatLike || []).map((d) => d.cls).slice(0, 5),
+        bodyHead: String(await W().executeJavaScript('document.body.innerText.slice(0,60)', true).catch(() => '')),
+      });
+    }
     const ranked = scoreLib.rankJobs(lastJobs, scoreCtx());
     const matches = topMatches(ranked);
     if (matches.length) store.patch('resume', { matches, title: matches[0].title });
@@ -145,7 +180,7 @@ async function onMessagePageLoaded(url) {
   msgAutoBusy = true;
   lastMsgAutoAt = Date.now();
   lastWorkAt = Date.now();
-  const wc = view.webContents;
+  const wc = W();
   const run = logger.startRun('msg-auto-onopen', { url });
   try {
     // 页面刚加载时列表还没渲染出来，先等会话项出现（最多 20 秒）
@@ -290,7 +325,7 @@ ipcMain.handle('app:state', wrap(async () => ({
   requirement: store.get('requirement'),
   history: store.get('history'),
   logDir: store.get('settings').logDir,
-  page: await auto.pageInfo(view.webContents).catch(() => null),
+  page: await auto.pageInfo(W()).catch(() => null),
 })));
 
 ipcMain.handle('settings:save', wrap(async (patch) => {
@@ -306,17 +341,17 @@ ipcMain.handle('resume:fetch-site', wrap(async () => {
   const settings = store.get('settings');
   const url = settings.resumeUrl || 'https://i.zhaopin.com/resume';
   const run = logger.startRun('resume-fetch', { url });
-  await auto.loadUrl(view.webContents, url, logger).catch((err) => logger.warn('resume', '简历页加载异常', { msg: err.message }));
+  await auto.loadUrl(W(), url, logger).catch((err) => logger.warn('resume', '简历页加载异常', { msg: err.message }));
   // 先把所有"查看全部"展开、把页面滚到底，保证抓到的是整份简历而不是折叠后的摘要
   for (let i = 0; i < 3; i += 1) {
-    const expanded = await auto.run(view.webContents, scraperLib.EXPAND_RESUME).catch(() => null);
+    const expanded = await auto.run(W(), scraperLib.EXPAND_RESUME).catch(() => null);
     logger.info('resume', '展开简历折叠块', expanded || {});
     await auto.sleep(1200);
   }
   let res = null;
   for (let i = 0; i < 3; i += 1) {
     await auto.sleep(1500);
-    res = await auto.run(view.webContents, scraperLib.SCRAPE_RESUME).catch(() => null);
+    res = await auto.run(W(), scraperLib.SCRAPE_RESUME).catch(() => null);
     if (res && !res.lost && !res.loggedOut && (res.chars || 0) >= 300) break;
   }
   if (!res || res.lost || res.loggedOut || (res.chars || 0) < 300) {
@@ -473,30 +508,85 @@ ipcMain.handle('resume:optimize', wrap(async () => {
   return final;
 }));
 
-ipcMain.handle('browser:goto', wrap(async ({ url }) => auto.loadUrl(view.webContents, url, logger)));
+ipcMain.handle('browser:goto', wrap(async ({ url }) => auto.loadUrl(W(), url, logger)));
+// 打开当前站点的消息页（智联是 i.zhaopin.com/im，BOSS 是 /web/geek/chat，各家不同）
+ipcMain.handle('message:page', wrap(async () => {
+  const site = sitesLib.detect(W().getURL());
+  const url = site.messageUrl || store.get('settings').messageUrl;
+  return auto.loadUrl(W(), url, logger);
+}));
+// 站点自检：抓一页 + 把真实 DOM 的类名吐出来，用来校准选择器
+ipcMain.handle('site:selftest', wrap(async () => {
+  const site = sitesLib.detect(W().getURL());
+  const jobs = await auto.scrapeJobs(W(), logger).catch((e) => ({ count: 0, jobs: [], error: e.message }));
+  const raw = await W().executeJavaScript(scraperMultiLib.DOM_DUMP(site), true).catch(() => null);
+  let dom = raw;
+  try { dom = JSON.parse(raw); } catch {}
+  logger.info('site', `${site.name} 自检`, {
+    count: jobs.count || 0,
+    samples: (jobs.jobs || []).slice(0, 3).map((j) => `${j.salary}|${j.title}|${j.company}|${j.location}`),
+  });
+  store.set('siteCheck', { at: Date.now(), site: site.key, count: jobs.count || 0, dom });
+  return { site: auto.currentSite(W()), count: jobs.count || 0, samples: (jobs.jobs || []).slice(0, 5), dom };
+}));
 ipcMain.handle('browser:home', wrap(async () => {
-  const cur = sitesLib.detect(view.webContents.getURL());
+  const cur = sitesLib.detect(W().getURL());
   const target = cur.home || store.get('settings').homeUrl;
-  return auto.loadUrl(view.webContents, target, logger);
+  return auto.loadUrl(W(), target, logger);
 }));
 ipcMain.handle('browser:search', wrap(async ({ kw, city, site }) => {
-  const cur = sitesLib.detect(view.webContents.getURL());
+  const cur = sitesLib.detect(W().getURL());
   const key = site || cur.key;
   const built = sitesLib.searchUrl(key, kw || '销售', city || '广州');
   const settings = store.get('settings');
   const url = built || settings.searchUrlTemplate
     .replace('{kw}', encodeURIComponent(kw || '嵌入式开发'))
     .replace('{jl}', city || '763');
-  return auto.loadUrl(view.webContents, url, logger);
+  return auto.loadUrl(W(), url, logger);
 }));
 ipcMain.handle('browser:info', wrap(async () => {
-  const info = await auto.pageInfo(view.webContents);
-  return { ...info, site: auto.currentSite(view.webContents) };
+  const info = await auto.pageInfo(W());
+  return { ...info, site: auto.currentSite(W()) };
 }));
-ipcMain.handle('sites:list', wrap(async () => ({ sites: sitesLib.list(), current: auto.currentSite(view.webContents) })));
+ipcMain.handle('sites:list', wrap(async () => ({ sites: sitesLib.list(), current: auto.currentSite(W()) })));
+
+// 接管本机 Chrome：Chrome 需带 --remote-debugging-port=9222 启动，这里直接连它已登录的标签页
+ipcMain.handle('chrome:connect', wrap(async ({ port, host, url } = {}) => {
+  const cfg = store.get('settings').chrome || {};
+  if (chromePage) {
+    chromePage.close();
+    chromePage = null;
+  }
+  const { page, target, all } = await cdpLib.attach({
+    port: Number(port || cfg.port || 9222),
+    host: host || cfg.host || 'zhipin.com',
+    url: url || '',
+  });
+  chromePage = page;
+  const info = await auto.pageInfo(page).catch(() => ({ url: target.url, title: target.title }));
+  logger.info('chrome', '已接管本机 Chrome 标签页', { url: info.url, tabs: all.length });
+  return {
+    ok: true,
+    url: info.url,
+    title: info.title,
+    site: auto.currentSite(page),
+    tabs: all.map((t) => ({ url: t.url, title: t.title })),
+  };
+}));
+ipcMain.handle('chrome:disconnect', wrap(async () => {
+  if (chromePage) chromePage.close();
+  chromePage = null;
+  logger.info('chrome', '已断开本机 Chrome');
+  return { ok: true };
+}));
+ipcMain.handle('chrome:status', wrap(async () => ({
+  connected: Boolean(chromePage),
+  url: chromePage ? chromePage.getURL() : '',
+  site: chromePage ? auto.currentSite(chromePage) : null,
+})));
 
 ipcMain.handle('jobs:scrape', wrap(async () => {
-  const jobs = await auto.scrapeJobs(view.webContents, logger);
+  const jobs = await auto.scrapeJobs(W(), logger);
   lastJobs = jobs.jobs || [];
   const ranked = scoreLib.rankJobs(lastJobs, scoreCtx());
   const matches = topMatches(ranked);
@@ -505,8 +595,8 @@ ipcMain.handle('jobs:scrape', wrap(async () => {
   return { page: jobs, ranked, matches };
 }));
 
-ipcMain.handle('jobs:open', wrap(async ({ index }) => auto.openJobCard(view.webContents, index, logger)));
-ipcMain.handle('jobs:detail', wrap(async () => auto.scrapeDetail(view.webContents, logger)));
+ipcMain.handle('jobs:open', wrap(async ({ index }) => auto.openJobCard(W(), index, logger)));
+ipcMain.handle('jobs:detail', wrap(async () => auto.scrapeDetail(W(), logger)));
 
 ipcMain.handle('apply:run', wrap(async ({ indexes = [], jobs = [], dryRun = true }) => {
   const settings = store.get('settings');
@@ -532,8 +622,8 @@ ipcMain.handle('apply:run', wrap(async ({ indexes = [], jobs = [], dryRun = true
 
   for (const job of plan.plan) {
     try {
-      await auto.openJobCard(view.webContents, job.index, logger);
-      const detail = await auto.scrapeDetail(view.webContents, logger);
+      await auto.openJobCard(W(), job.index, logger);
+      const detail = await auto.scrapeDetail(W(), logger);
       const risk = policy.detectRisk(detail.body);
       if (risk.risk && !dryRun) {
         logger.warn('risk', `页面出现「${risk.signal}」，本轮暂停`, { job: job.title });
@@ -557,7 +647,7 @@ ipcMain.handle('apply:run', wrap(async ({ indexes = [], jobs = [], dryRun = true
         });
         run.add('dry-run', { index: job.index, title: detail.title || job.title });
       } else {
-        const applied = await auto.applyCurrentJob(view.webContents, {}, logger);
+        const applied = await auto.applyCurrentJob(W(), {}, logger);
         const rec = tracker.addApplied(history, {
           title: detail.title || job.title,
           company: job.company,
@@ -645,7 +735,7 @@ ipcMain.handle('auto:apply', wrap(async ({ dryRun = false, max, threshold, keywo
   const settings = store.get('settings');
   const run = logger.startRun('auto-apply', { dryRun, max, threshold, keyword });
   const res = await autoflow.autoApply({
-    wc: view.webContents, auto, logger, store,
+    wc: W(), auto, logger, store,
     options: { dryRun, max, threshold, keyword },
   });
   for (const step of res.steps) run.add(step.step, step);
@@ -668,7 +758,7 @@ ipcMain.handle('auto:apply', wrap(async ({ dryRun = false, max, threshold, keywo
 ipcMain.handle('auto:reply', wrap(async ({ send = false, max } = {}) => {
   const run = logger.startRun('auto-reply', { send, max });
   const res = await autoflow.autoReply({
-    wc: view.webContents, auto, logger, store, options: { send, max },
+    wc: W(), auto, logger, store, options: { send, max },
   });
   for (const step of res.steps) run.add(step.step, step);
   run.finish({ drafted: res.results.filter((r) => r.draft).length, sent: res.results.filter((r) => r.sent).length });
@@ -705,16 +795,16 @@ ipcMain.handle('sim:run', wrap(async () => {
   return { runId: run.runId, file: run.file, steps: result.steps, stats: result.stats, messages: result.messages, blocked: result.plan.blocked, applied: result.appliedResults, quota: result.plan.quota };
 }));
 
-ipcMain.handle('message:scrape', wrap(async () => auto.scrapeMessages(view.webContents, logger)));
-ipcMain.handle('message:open', wrap(async ({ index }) => auto.openConversation(view.webContents, index, logger)));
-ipcMain.handle('message:thread', wrap(async () => auto.readThread(view.webContents)));
+ipcMain.handle('message:scrape', wrap(async () => auto.scrapeMessages(W(), logger)));
+ipcMain.handle('message:open', wrap(async ({ index }) => auto.openConversation(W(), index, logger)));
+ipcMain.handle('message:thread', wrap(async () => auto.readThread(W())));
 ipcMain.handle('message:drafts', wrap(async ({ job, hrMessage }) => {
   const { resume, requirement } = ctx();
   return generateReplies({ job: job || {}, resume, requirement, hrMessage });
 }));
 ipcMain.handle('message:send', wrap(async ({ text }) => {
   const settings = store.get('settings');
-  const res = await auto.sendMessage(view.webContents, text, logger);
+  const res = await auto.sendMessage(W(), text, logger);
   if (res.ok) {
     const history = store.get('history');
     history.replied.push({ ts: new Date().toISOString(), text });
