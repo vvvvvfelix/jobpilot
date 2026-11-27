@@ -112,9 +112,20 @@ const DETAIL = (site) => withCfg(site, `(() => {
     }
     return '';
   };
-  const title = pick(cfg.title) || pick(['[class*="job-title"]', '[class*="jobTitle"]', 'h1', 'h2']) || document.title.replace(/[-_|].*$/, '').trim();
-  const company = pick(cfg.company) || pick(['[class*="company-name"]', '[class*="companyName"]', '[class*="comp-name"]']);
-  const salary = pick(cfg.salary) || pick(['[class*="salary"]', '.money']);
+  let title = pick(cfg.title) || pick(['.cn', '[class*="job-title"]', '[class*="jobTitle"]', 'h1', 'h2']) || document.title.replace(/[-_|].*$/, '').trim();
+  let company = pick(cfg.company) || pick(['[class*="company-name"]', '[class*="companyName"]', '[class*="comp-name"]', '.cname']);
+  let salary = pick(cfg.salary) || pick(['[class*="salary"]', '.money', '.t1']);
+  // 老版详情页把薪资、地点、经验挤在一行（如「8千-1万·13薪 广州-白云区 2年及以上」），整页兜底捞一遍
+  if (!salary) {
+    const SAL = ${SALARY_RE};
+    salary = (txt($('.cn') || document.body).slice(0, 240).match(SAL) || [])[0] || '';
+  }
+  if (salary && title.includes(salary)) title = title.slice(0, title.indexOf(salary)).trim();
+  if (!company) {
+    const blockEl = $('[class*="job-corp"] .tmsg') || $('[class*="job-corp"] .bname ~ *, .tcompany, [class*="company-info"], .tCompany');
+    const blockTxt = txt(blockEl).replace(/^公司信息\\s*/, '');
+    company = (blockTxt.match(/([\\u4e00-\\u9fa5A-Za-z0-9()（）]{2,28}(?:有限公司|公司|集团))/) || [])[1] || '';
+  }
   let bodyEl = null;
   for (const s of cfg.detailBody.concat(['[class*="job-detail"]', '[class*="job-desc"]', '[class*="jobdesc"]', '[class*="position-detail"]', 'main', 'article'])) {
     const cand = $$(s).find((c) => txt(c).length > 220);
