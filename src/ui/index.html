@@ -86,6 +86,7 @@
         </div>
         <div class="row actions">
           <button id="btnScrape" class="primary">抓取当前页岗位并打分</button>
+          <button id="btnSiteCheck" class="ghost">站点自检</button>
           <button id="btnAuto" class="primary">一键自动投递</button>
           <button id="btnDryRun" class="ghost">预演投递</button>
           <button id="btnApply" class="warn">真实投递</button>
@@ -155,6 +156,17 @@
 
       <section class="pane" id="pane-settings">
         <label class="block">日志目录（默认 F:\ZhaopinAssistant\logs）<input id="sLogDir" /></label>
+        <hr />
+        <div class="row">
+          <label>接管本机 Chrome · 调试端口<input id="sChromePort" type="number" min="1" max="65535" placeholder="9222" /></label>
+          <label>匹配域名<input id="sChromeHost" placeholder="zhipin.com" /></label>
+        </div>
+        <div class="row actions">
+          <button id="btnChromeConnect" class="primary">连接 Chrome</button>
+          <button id="btnChromeClose" class="ghost">断开</button>
+          <span class="hint" id="chromeState"></span>
+        </div>
+        <p class="hint">用法：先完全退出 Chrome，再用 <code>chrome.exe --remote-debugging-port=9222</code> 启动（正常窗口即可，登录态还是你自己的），然后点「连接 Chrome」。连接后抓岗位、投递、回消息都走这个窗口，不再用内嵌浏览器。</p>
         <div class="row">
           <label>每轮最多投递<input id="sMaxApply" type="number" min="1" max="50" /></label>
           <label>投递间隔(毫秒)<input id="sInterval" type="number" min="3000" step="1000" /></label>
